@@ -1,356 +1,401 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Send, 
-  LayoutGrid, 
-  PlusCircle, 
-  ArrowLeft, 
-  CheckCircle2, 
-  Circle, 
-  X, 
-  ChevronRight,
-  AlertCircle,
-  Calendar as CalendarIcon,
-  ChevronLeft,
-  Settings as SettingsIcon,
-  Save
+import {
+  Send, LayoutGrid, PlusCircle, ArrowLeft, CheckCircle2,
+  Circle, X, ChevronRight, AlertCircle, Calendar as CalendarIcon,
+  ChevronLeft, Settings as SettingsIcon, Save, Search, Trash2, Archive
 } from 'lucide-react';
 
+const PASTEL = {
+  red:    { bg: '#FFD6D6', text: '#c0392b', dot: '#e74c3c' },
+  purple: { bg: '#D6D0FF', text: '#5b2fc7', dot: '#7c5cbf' },
+  yellow: { bg: '#FFF3C4', text: '#b07d00', dot: '#f1c40f' },
+  green:  { bg: '#C8F0D8', text: '#1a7a45', dot: '#2ecc71' },
+};
+
 const App = () => {
-  // --- Persistent State (localStorage) ---
   const [tasks, setTasks] = useState(() => {
-    const saved = localStorage.getItem('agent_tasks');
-    return saved ? JSON.parse(saved) : [];
+    const s = localStorage.getItem('agent_tasks');
+    return s ? JSON.parse(s) : [];
   });
-
-  const [userName, setUserName] = useState(() => {
-    return localStorage.getItem('agent_user_name') || 'Старина';
-  });
-
-  const [userApiKey, setUserApiKey] = useState(() => {
-    return localStorage.getItem('agent_api_key') || '';
-  });
-
-  // --- UI State ---
-  const [view, setView] = useState('home'); // 'home', 'board', 'calendar', 'settings'
+  const [userName, setUserName] = useState(() => localStorage.getItem('agent_user_name') || 'Студент');
+  const [userApiKey, setUserApiKey] = useState(() => localStorage.getItem('agent_api_key') || '');
+  const [view, setView] = useState('home');
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [pendingTask, setPendingTask] = useState(null); 
-  const [activeTaskId, setActiveTaskId] = useState(null); 
+  const [pendingTask, setPendingTask] = useState(null);
+  const [activeTaskId, setActiveTaskId] = useState(null);
   const [error, setError] = useState(null);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [search, setSearch] = useState('');
 
-  // --- Persistence Sync ---
-  useEffect(() => {
-    localStorage.setItem('agent_tasks', JSON.stringify(tasks));
-  }, [tasks]);
+  useEffect(() => { localStorage.setItem('agent_tasks', JSON.stringify(tasks)); }, [tasks]);
 
   const saveSettings = (name, key) => {
     localStorage.setItem('agent_user_name', name);
     localStorage.setItem('agent_api_key', key);
-    setUserName(name);
-    setUserApiKey(key);
-    setView('home');
+    setUserName(name); setUserApiKey(key); setView('home');
   };
 
   const activeTask = tasks.find(t => t.id === activeTaskId);
+  const closeDetail = () => setActiveTaskId(null);
 
-  const closeDetail = () => {
-    setActiveTaskId(null);
-  };
-
-  // --- API Logic ---
   const callGemini = async (prompt) => {
-    if (!userApiKey) {
-      throw new Error("Зайди в настройки и вставь свой API-ключ, иначе я буду молчать как партизан.");
-    }
-
+    if (!userApiKey) throw new Error('Вставь API-ключ в настройки!');
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
-      systemInstruction: {
-        parts: [{ text: `Ты — саркастичный и ироничный AI-агент для студента по имени ${userName}. Твоя задача — анализировать хаотичный ввод. ТЫ ОБЯЗАН возвращать дату в формате YYYY-MM-DD. Не делай все задачи красными (red)! Используй yellow для важных, но не срочных, purple для мелких хлопот и green для ерунды. Будь строгим критиком лени.` }]
-      },
+      systemInstruction: { parts: [{ text: `Ты — AI-агент для студента ${userName}. Возвращай дату в формате YYYY-MM-DD. Используй yellow для важных, purple для средних, green для простых, red только для срочных.` }] },
       generationConfig: {
-        responseMimeType: "application/json",
+        responseMimeType: 'application/json',
         responseSchema: {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
-            isDeadlineMissing: { type: "BOOLEAN" },
-            title: { type: "STRING" },
-            deadline: { type: "STRING" }, 
-            priorityColor: { type: "STRING", enum: ["red", "purple", "yellow", "green"] },
-            reasoning: { type: "STRING" },
-            steps: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: { text: { type: "STRING" }, completed: { type: "BOOLEAN" } }
-              }
-            }
+            isDeadlineMissing: { type: 'BOOLEAN' },
+            title: { type: 'STRING' },
+            deadline: { type: 'STRING' },
+            priorityColor: { type: 'STRING', enum: ['red', 'purple', 'yellow', 'green'] },
+            reasoning: { type: 'STRING' },
+            steps: { type: 'ARRAY', items: { type: 'OBJECT', properties: { text: { type: 'STRING' }, completed: { type: 'BOOLEAN' } } } }
           }
         }
       }
     };
-
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${userApiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${userApiKey}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     });
-    
-    if (!response.ok) throw new Error("API не отвечает. Либо ключ кривой, либо Google нас забанил.");
-    
-    const result = await response.json();
+    if (!res.ok) throw new Error('API не отвечает. Проверь ключ.');
+    const result = await res.json();
     return JSON.parse(result.candidates[0].content.parts[0].text);
   };
 
   const handleAddTask = async (e) => {
     if (e) e.preventDefault();
     if (!inputValue.trim()) return;
-
-    setIsProcessing(true);
-    setError(null);
-
+    setIsProcessing(true); setError(null);
     try {
       const today = new Date().toISOString().split('T')[0];
-      const prompt = pendingTask 
-        ? `Сегодня ${today}. Пользователь ${userName} уточнил дедлайн для задачи "${pendingTask.rawInput}": "${inputValue}". Разбери задачу и выдай JSON.`
-        : `Сегодня ${today}. Разбери задачу пользователя ${userName}: "${inputValue}". Если даты нет, установи isDeadlineMissing: true.`;
-
-      const aiResponse = await callGemini(prompt);
-
-      if (aiResponse.isDeadlineMissing && !pendingTask) {
-        setPendingTask({ rawInput: inputValue });
-        setInputValue('');
-        setIsProcessing(false);
-        return;
+      const prompt = pendingTask
+        ? `Сегодня ${today}. Уточнение дедлайна для "${pendingTask.rawInput}": "${inputValue}". Выдай JSON.`
+        : `Сегодня ${today}. Разбери задачу: "${inputValue}". Если даты нет, установи isDeadlineMissing: true.`;
+      const ai = await callGemini(prompt);
+      if (ai.isDeadlineMissing && !pendingTask) {
+        setPendingTask({ rawInput: inputValue }); setInputValue(''); setIsProcessing(false); return;
       }
-
-      const newTask = {
+      setTasks(prev => [...prev, {
         id: Date.now(),
-        title: aiResponse.title || (pendingTask ? pendingTask.rawInput : inputValue),
-        deadline: aiResponse.deadline || today,
-        color: aiResponse.priorityColor || "green",
-        steps: aiResponse.steps || [],
-        reasoning: aiResponse.reasoning || "Я ИИ, я так чувствую.",
+        title: ai.title || inputValue,
+        deadline: ai.deadline || today,
+        color: ai.priorityColor || 'green',
+        steps: ai.steps || [],
+        reasoning: ai.reasoning || '',
         createdAt: new Date().toLocaleDateString()
-      };
-
-      setTasks([...tasks, newTask]);
-      setInputValue('');
-      setPendingTask(null);
-      setTimeout(() => setView('board'), 300);
-
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsProcessing(false);
-    }
+      }]);
+      setInputValue(''); setPendingTask(null); setView('board');
+    } catch (err) { setError(err.message); }
+    finally { setIsProcessing(false); }
   };
 
-  const toggleStep = (taskId, stepIndex) => {
+  const toggleStep = (taskId, idx) => {
     setTasks(prev => prev.map(t => {
-      if (t.id === taskId) {
-        const newSteps = [...t.steps];
-        newSteps[stepIndex].completed = !newSteps[stepIndex].completed;
-        return { ...t, steps: newSteps };
-      }
-      return t;
+      if (t.id !== taskId) return t;
+      const steps = [...t.steps];
+      steps[idx] = { ...steps[idx], completed: !steps[idx].completed };
+      return { ...t, steps };
     }));
   };
 
-  const getColorClass = (color) => {
-    switch (color) {
-      case 'red': return 'bg-red-100 border-red-300 text-red-800';
-      case 'purple': return 'bg-purple-100 border-purple-300 text-purple-800';
-      case 'yellow': return 'bg-yellow-100 border-yellow-300 text-yellow-800';
-      case 'green': return 'bg-green-100 border-green-300 text-green-800';
-      default: return 'bg-gray-100 border-gray-300';
-    }
-  };
+  const deleteTask = (id) => { setTasks(prev => prev.filter(t => t.id !== id)); closeDetail(); };
 
-  // --- Calendar Helpers ---
-  const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
-  const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
-  const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
-  const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+  // Calendar
+  const months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  const days = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+  const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth()+1, 0).getDate();
+  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
 
-  const renderCalendar = () => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    const daysCount = getDaysInMonth(year, month);
-    const firstDay = getFirstDayOfMonth(year, month);
-    const calendarDays = [];
-    
-    for (let i = 0; i < firstDay; i++) calendarDays.push(<div key={`empty-${i}`} className="h-16 sm:h-24 bg-slate-50/30"></div>);
+  const filteredTasks = tasks.filter(t => t.title.toLowerCase().includes(search.toLowerCase()));
 
-    for (let day = 1; day <= daysCount; day++) {
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const dayTasks = tasks.filter(t => t.deadline === dateStr);
-      const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
-
-      calendarDays.push(
-        <div key={day} className="h-16 sm:h-24 p-1 sm:p-2 border border-slate-50 bg-white relative hover:bg-indigo-50/20 transition-all">
-          <span className={`text-[10px] sm:text-xs font-black ${isToday ? 'bg-indigo-600 text-white w-5 h-5 flex items-center justify-center rounded-full' : 'text-slate-300'}`}>
-            {day}
-          </span>
-          <div className="mt-1 flex flex-wrap gap-0.5">
-            {dayTasks.map(t => (
-              <div key={t.id} onClick={() => { setActiveTaskId(t.id); setView('board'); }} className={`w-full h-1 sm:h-1.5 rounded-full ${t.color === 'red' ? 'bg-red-400' : t.color === 'purple' ? 'bg-purple-400' : t.color === 'yellow' ? 'bg-yellow-400' : 'bg-green-400'} cursor-pointer hover:scale-110 transition-transform`}></div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-    return calendarDays;
-  };
+  const navItems = [
+    { id: 'home',     label: 'Новая задача', icon: <PlusCircle size={18}/> },
+    { id: 'board',    label: 'Доска',        icon: <LayoutGrid size={18}/> },
+    { id: 'calendar', label: 'Календарь',    icon: <CalendarIcon size={18}/> },
+    { id: 'settings', label: 'Настройки',    icon: <SettingsIcon size={18}/> },
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-indigo-100">
-      
-      {/* Header */}
-      <header className="p-4 sm:p-6 flex justify-between items-center max-w-5xl mx-auto w-full sticky top-0 bg-slate-50/80 backdrop-blur-md z-40">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('home')}>
-          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-            <LayoutGrid size={20} />
+    <div style={{ display:'flex', minHeight:'100vh', background:'#F2F3F7', fontFamily:"'Inter','Segoe UI',sans-serif" }}>
+
+      {/* Sidebar */}
+      <aside style={{ width:220, background:'#fff', borderRight:'1px solid #EBEBEB', padding:'32px 0', display:'flex', flexDirection:'column', gap:4, flexShrink:0 }}>
+        {/* Logo */}
+        <div style={{ padding:'0 24px 28px', display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ width:32, height:32, borderRadius:10, background:'#5C6BC0', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <LayoutGrid size={16} color="#fff"/>
           </div>
-          <h1 className="text-xl font-black tracking-tighter hidden sm:block uppercase">Task.Agent</h1>
+          <span style={{ fontWeight:800, fontSize:15, letterSpacing:1, color:'#222' }}>TASK.AI</span>
         </div>
-        
-        <div className="flex gap-2">
-          <button onClick={() => setView('calendar')} className={`p-2 sm:px-4 sm:py-2 rounded-full transition-all font-bold text-xs flex items-center gap-2 ${view === 'calendar' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-slate-200 hover:shadow-md'}`}>
-            <CalendarIcon size={14} /> <span className="hidden sm:inline">Календарь</span>
+
+        {navItems.map(n => (
+          <button key={n.id} onClick={() => setView(n.id)} style={{
+            display:'flex', alignItems:'center', gap:12, padding:'10px 24px',
+            background: view===n.id ? '#F0F1FF' : 'transparent',
+            color: view===n.id ? '#5C6BC0' : '#888',
+            border:'none', cursor:'pointer', fontSize:14, fontWeight: view===n.id ? 700 : 500,
+            borderLeft: view===n.id ? '3px solid #5C6BC0' : '3px solid transparent',
+            transition:'all .15s'
+          }}>
+            {n.icon} {n.label}
           </button>
-          <button onClick={() => setView('board')} className={`p-2 sm:px-4 sm:py-2 rounded-full transition-all font-bold text-xs flex items-center gap-2 ${view === 'board' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-slate-200 hover:shadow-md'}`}>
-            <LayoutGrid size={14} /> <span className="hidden sm:inline">Доска</span>
+        ))}
+
+        <div style={{ marginTop:'auto', padding:'0 24px' }}>
+          <button onClick={() => setView('settings')} style={{
+            width:'100%', padding:'12px', borderRadius:12, background:'#5C6BC0',
+            color:'#fff', border:'none', fontWeight:700, fontSize:13, cursor:'pointer'
+          }}>
+            {userApiKey ? '✓ Ключ активен' : '+ Добавить ключ'}
           </button>
-          <button onClick={() => setView('settings')} className={`p-2 sm:px-4 sm:py-2 rounded-full transition-all font-bold text-xs flex items-center gap-2 ${view === 'settings' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-slate-200 hover:shadow-md'}`}>
-            <SettingsIcon size={14} /> <span className="hidden sm:inline">Настройки</span>
-          </button>
-          {view !== 'home' && (
-            <button onClick={() => setView('home')} className="p-2 sm:px-4 sm:py-2 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 font-bold text-xs hover:bg-indigo-100 transition-all">
-              <PlusCircle size={14} />
-            </button>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
+
+        {/* Header */}
+        <header style={{ background:'#fff', borderBottom:'1px solid #EBEBEB', padding:'18px 32px', display:'flex', alignItems:'center', gap:16 }}>
+          <h1 style={{ flex:1, margin:0, fontSize:22, fontWeight:800, color:'#1a1a2e', letterSpacing:.5 }}>
+            {view==='home' ? 'Новая задача' : view==='board' ? 'Мои задачи' : view==='calendar' ? 'Календарь' : 'Настройки'}
+          </h1>
+
+          {/* Search */}
+          {view==='board' && (
+            <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+              <Search size={15} style={{ position:'absolute', left:12, color:'#aaa' }}/>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Поиск..."
+                style={{ paddingLeft:36, paddingRight:16, paddingTop:9, paddingBottom:9, border:'1.5px solid #EBEBEB', borderRadius:12, fontSize:13, outline:'none', background:'#F8F8FC', width:220 }}/>
+            </div>
           )}
-        </div>
-      </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
-        
-        {/* View: Home */}
-        {view === 'home' && (
-          <div className="flex flex-col items-center justify-center space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700 min-h-[50vh]">
-            <div className="text-center space-y-4">
-              <h2 className="text-3xl sm:text-5xl font-black text-slate-800 tracking-tight">
-                {pendingTask ? "А когда дедлайн, умник?" : `Чё застрял, ${userName}?`}
-              </h2>
-              <p className="text-slate-400 text-base sm:text-lg max-w-md mx-auto font-medium">
-                {!userApiKey ? "Сначала зайди в настройки и введи API Key, а потом уже требуй от меня работы." : (pendingTask ? "Назови дату, или я сам её придумаю." : "Пиши задачу. Я сам всё распланирую, пока ты отдыхаешь.")}
-              </p>
-            </div>
-
-            <form onSubmit={handleAddTask} className="w-full max-w-2xl relative">
-              <input autoFocus type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder={pendingTask ? "Напр: 25 мая, завтра..." : "Напр: Сделать курсач..."} disabled={isProcessing || !userApiKey} className="w-full p-5 sm:p-7 pr-16 sm:pr-24 text-lg sm:text-2xl bg-white border-2 border-slate-100 rounded-[2rem] shadow-2xl focus:border-indigo-400 focus:outline-none transition-all placeholder:text-slate-200 font-bold disabled:bg-slate-50" />
-              <button type="submit" disabled={isProcessing || !inputValue.trim() || !userApiKey} className="absolute right-3 top-3 sm:right-4 sm:top-4 p-4 sm:p-5 bg-indigo-600 text-white rounded-2xl shadow-xl hover:bg-indigo-700 disabled:bg-slate-100 transition-all active:scale-90"><Send size={24} /></button>
-            </form>
-
-            {error && <div className="flex items-center gap-2 p-4 bg-red-50 text-red-600 rounded-2xl border border-red-100 animate-pulse"><AlertCircle size={18} /> <span className="text-sm font-bold">{error}</span></div>}
+          <div style={{ width:36, height:36, borderRadius:50, background:'#5C6BC0', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:700, fontSize:14 }}>
+            {userName[0]?.toUpperCase()}
           </div>
-        )}
+          <span style={{ fontSize:14, fontWeight:600, color:'#444' }}>{userName}</span>
+        </header>
 
-        {/* View: Settings */}
-        {view === 'settings' && (
-          <div className="max-w-md mx-auto animate-in fade-in slide-in-from-top-4 duration-500">
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100">
-              <h2 className="text-3xl font-black uppercase italic tracking-tighter mb-8">Настройки</h2>
-              <div className="space-y-6">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 ml-4 mb-2 block">Как тебя звать?</label>
-                  <input type="text" value={userName} onChange={(e) => setUserName(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-400 rounded-2xl outline-none font-bold transition-all" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 ml-4 mb-2 block">Gemini API Key</label>
-                  <input type="password" value={userApiKey} onChange={(e) => setUserApiKey(e.target.value)} placeholder="Вставь сюда свой ключ..." className="w-full p-4 bg-slate-50 border-2 border-transparent focus:border-indigo-400 rounded-2xl outline-none font-bold transition-all" />
-                </div>
-                <button onClick={() => saveSettings(userName, userApiKey)} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2">
-                  <Save size={18} /> Сохранить
-                </button>
-              </div>
-              <p className="mt-8 text-[10px] text-slate-300 font-bold text-center leading-relaxed">Твои данные хранятся только в твоем браузере. Я не ворую ключи, мне лень.</p>
-            </div>
-          </div>
-        )}
+        <main style={{ padding:32, flex:1, overflowY:'auto' }}>
 
-        {/* View: Board & Calendar (Same as before but integrated) */}
-        {view === 'board' && (
-          <div className="animate-in fade-in zoom-in-95 duration-500">
-             <div className="mb-10">
-                <h2 className="text-4xl font-black text-slate-800 tracking-tighter italic uppercase">Твои Хвосты</h2>
-                <p className="text-slate-400 font-bold text-sm tracking-widest uppercase">Список дел для {userName}</p>
-              </div>
-            {tasks.length === 0 ? (
-              <div className="text-center py-32 bg-white border-4 border-dashed border-slate-100 rounded-[3rem]"><p className="text-slate-300 font-black text-2xl uppercase italic">Пусто. Либо ты гений, либо мастер лени.</p></div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {tasks.map(task => (
-                  <div key={task.id} onClick={() => setActiveTaskId(task.id)} className={`p-8 rounded-[2rem] border-b-8 shadow-lg hover:shadow-2xl cursor-pointer transition-all transform hover:-translate-y-2 active:scale-95 ${getColorClass(task.color)}`}>
-                    <div className="flex justify-between items-start mb-6"><span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-40">{task.color === 'red' ? 'ОПАСНО' : 'ЗАДАЧА'}</span><ChevronRight size={20} className="opacity-20" /></div>
-                    <h3 className="text-xl font-black leading-none mb-4 uppercase italic">{task.title}</h3>
-                    <p className="text-xs font-bold opacity-60">СРОК: {task.deadline}</p>
-                    <div className="mt-8 flex gap-1.5">{task.steps.map((s, i) => <div key={i} className={`w-2 h-2 rounded-full ${s.completed ? 'bg-indigo-600' : 'bg-white opacity-50'}`}></div>)}</div>
+          {/* HOME */}
+          {view==='home' && (
+            <div style={{ maxWidth:600, margin:'40px auto' }}>
+              <div style={{ background:'#fff', borderRadius:24, padding:40, boxShadow:'0 4px 24px rgba(0,0,0,0.06)' }}>
+                <h2 style={{ margin:'0 0 8px', fontSize:24, fontWeight:800, color:'#1a1a2e' }}>
+                  {pendingTask ? '📅 Укажи дедлайн' : `Привет, ${userName}!`}
+                </h2>
+                <p style={{ margin:'0 0 28px', color:'#999', fontSize:14 }}>
+                  {!userApiKey ? 'Сначала добавь API-ключ в Настройках.' : pendingTask ? `Когда сдавать "${pendingTask.rawInput}"?` : 'Опиши задачу — AI всё разберёт.'}
+                </p>
+                <form onSubmit={handleAddTask} style={{ display:'flex', gap:12 }}>
+                  <input autoFocus value={inputValue} onChange={e=>setInputValue(e.target.value)}
+                    placeholder={pendingTask ? 'Напр: 25 мая, через неделю...' : 'Напр: Сдать курсовую...'}
+                    disabled={isProcessing || !userApiKey}
+                    style={{ flex:1, padding:'14px 18px', border:'2px solid #EBEBEB', borderRadius:14, fontSize:15, outline:'none', fontFamily:'inherit', background: !userApiKey?'#fafafa':'#fff', transition:'border .2s' }}
+                    onFocus={e=>e.target.style.borderColor='#5C6BC0'} onBlur={e=>e.target.style.borderColor='#EBEBEB'}
+                  />
+                  <button type="submit" disabled={isProcessing||!inputValue.trim()||!userApiKey}
+                    style={{ padding:'14px 22px', background:'#5C6BC0', color:'#fff', border:'none', borderRadius:14, fontWeight:700, fontSize:14, cursor:'pointer', opacity: (isProcessing||!inputValue.trim()||!userApiKey)?0.5:1, transition:'opacity .2s' }}>
+                    {isProcessing ? '...' : <Send size={18}/>}
+                  </button>
+                </form>
+                {error && (
+                  <div style={{ marginTop:16, padding:'12px 16px', background:'#FFF0F0', border:'1px solid #FFD6D6', borderRadius:12, color:'#c0392b', fontSize:13, display:'flex', alignItems:'center', gap:8 }}>
+                    <AlertCircle size={16}/> {error}
                   </div>
+                )}
+              </div>
+
+              {/* Recent tasks preview */}
+              {tasks.length > 0 && (
+                <div style={{ marginTop:32 }}>
+                  <h3 style={{ fontSize:16, fontWeight:700, color:'#1a1a2e', marginBottom:16 }}>Последние задачи</h3>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:12 }}>
+                    {tasks.slice(-4).map(t => (
+                      <div key={t.id} onClick={()=>{setActiveTaskId(t.id);setView('board');}}
+                        style={{ background: PASTEL[t.color]?.bg||'#eee', borderRadius:16, padding:'16px 18px', cursor:'pointer', transition:'transform .15s', boxShadow:'0 2px 8px rgba(0,0,0,0.05)' }}
+                        onMouseEnter={e=>e.currentTarget.style.transform='translateY(-3px)'}
+                        onMouseLeave={e=>e.currentTarget.style.transform='translateY(0)'}>
+                        <div style={{ fontSize:11, color: PASTEL[t.color]?.text, fontWeight:700, marginBottom:6, opacity:.7 }}>{t.deadline}</div>
+                        <div style={{ fontSize:13, fontWeight:700, color:'#1a1a2e', lineHeight:1.3 }}>{t.title}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* BOARD */}
+          {view==='board' && (
+            <div>
+              <div style={{ display:'flex', gap:12, marginBottom:24, flexWrap:'wrap' }}>
+                {['all','red','yellow','purple','green'].map(c => (
+                  <button key={c} onClick={()=>setSearch(c==='all'?'':c)}
+                    style={{ padding:'6px 16px', borderRadius:20, border:'1.5px solid', fontSize:12, fontWeight:600, cursor:'pointer',
+                      borderColor: c==='all'?'#5C6BC0': PASTEL[c]?.dot||'#ddd',
+                      background: c==='all'?'#5C6BC0': PASTEL[c]?.bg||'#f5f5f5',
+                      color: c==='all'?'#fff': PASTEL[c]?.text||'#666' }}>
+                    {c==='all'?'Все': c==='red'?'Срочно': c==='yellow'?'Важно': c==='purple'?'Средние':'Мелкие'}
+                  </button>
                 ))}
               </div>
-            )}
-          </div>
-        )}
 
-        {view === 'calendar' && (
-          <div className="animate-in fade-in slide-in-from-top-4 duration-500 max-w-4xl mx-auto">
-            <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100">
-              <div className="p-6 sm:p-10 bg-indigo-600 text-white flex justify-between items-center">
-                <button onClick={() => setView('board')} className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/40 rounded-xl transition-all text-xs font-black uppercase tracking-widest"><ArrowLeft size={16} /> <span>Назад</span></button>
-                <div className="text-center"><h2 className="text-3xl font-black uppercase italic tracking-tighter">{months[currentDate.getMonth()]}</h2><p className="text-xs font-bold opacity-70 tracking-[0.5em]">{currentDate.getFullYear()}</p></div>
-                <div className="flex gap-2">
-                  <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))} className="p-2 hover:bg-white/20 rounded-xl transition-all"><ChevronLeft size={24} /></button>
-                  <button onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))} className="p-2 hover:bg-white/20 rounded-xl transition-all"><ChevronRight size={24} /></button>
+              {filteredTasks.length === 0 ? (
+                <div style={{ textAlign:'center', padding:'80px 0', color:'#ccc' }}>
+                  <LayoutGrid size={48} style={{ marginBottom:16, opacity:.3 }}/>
+                  <p style={{ fontSize:16, fontWeight:600 }}>Задач нет. Добавь первую!</p>
+                </div>
+              ) : (
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))', gap:16 }}>
+                  {filteredTasks.map(task => {
+                    const p = PASTEL[task.color] || PASTEL.green;
+                    const done = task.steps.filter(s=>s.completed).length;
+                    const pct = task.steps.length ? Math.round(done/task.steps.length*100) : 0;
+                    return (
+                      <div key={task.id} onClick={()=>setActiveTaskId(task.id)}
+                        style={{ background: p.bg, borderRadius:20, padding:'20px 22px', cursor:'pointer',
+                          transition:'transform .15s, box-shadow .15s', boxShadow:'0 2px 12px rgba(0,0,0,0.06)' }}
+                        onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-4px)';e.currentTarget.style.boxShadow='0 8px 24px rgba(0,0,0,0.12)'}}
+                        onMouseLeave={e=>{e.currentTarget.style.transform='translateY(0)';e.currentTarget.style.boxShadow='0 2px 12px rgba(0,0,0,0.06)'}}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
+                          <span style={{ fontSize:10, fontWeight:700, color:p.text, opacity:.7, textTransform:'uppercase', letterSpacing:1 }}>{task.deadline}</span>
+                          <div style={{ width:8, height:8, borderRadius:'50%', background:p.dot }}/>
+                        </div>
+                        <h3 style={{ margin:'0 0 16px', fontSize:15, fontWeight:700, color:'#1a1a2e', lineHeight:1.4 }}>{task.title}</h3>
+                        {task.steps.length > 0 && (
+                          <>
+                            <div style={{ height:4, background:'rgba(255,255,255,0.5)', borderRadius:4, marginBottom:8 }}>
+                              <div style={{ height:'100%', width:`${pct}%`, background:p.dot, borderRadius:4, transition:'width .3s' }}/>
+                            </div>
+                            <span style={{ fontSize:11, color:p.text, opacity:.7 }}>{done}/{task.steps.length} шагов</span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CALENDAR */}
+          {view==='calendar' && (
+            <div style={{ maxWidth:700, margin:'0 auto', background:'#fff', borderRadius:24, boxShadow:'0 4px 24px rgba(0,0,0,0.06)', overflow:'hidden' }}>
+              <div style={{ background:'#5C6BC0', padding:'24px 32px', display:'flex', justifyContent:'space-between', alignItems:'center', color:'#fff' }}>
+                <button onClick={()=>setCurrentDate(new Date(currentDate.getFullYear(),currentDate.getMonth()-1,1))}
+                  style={{ background:'rgba(255,255,255,0.2)', border:'none', borderRadius:8, padding:'6px 12px', color:'#fff', cursor:'pointer' }}>
+                  <ChevronLeft size={18}/>
+                </button>
+                <div style={{ textAlign:'center' }}>
+                  <div style={{ fontSize:22, fontWeight:800 }}>{months[currentDate.getMonth()]}</div>
+                  <div style={{ fontSize:13, opacity:.8 }}>{currentDate.getFullYear()}</div>
+                </div>
+                <button onClick={()=>setCurrentDate(new Date(currentDate.getFullYear(),currentDate.getMonth()+1,1))}
+                  style={{ background:'rgba(255,255,255,0.2)', border:'none', borderRadius:8, padding:'6px 12px', color:'#fff', cursor:'pointer' }}>
+                  <ChevronRight size={18}/>
+                </button>
+              </div>
+              <div style={{ padding:'24px 32px' }}>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', marginBottom:8 }}>
+                  {days.map(d=><div key={d} style={{ textAlign:'center', fontSize:11, fontWeight:700, color:'#bbb', padding:'8px 0' }}>{d}</div>)}
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:4 }}>
+                  {Array(firstDay).fill(null).map((_,i)=><div key={`e${i}`}/>)}
+                  {Array(daysInMonth).fill(null).map((_,i)=>{
+                    const day=i+1;
+                    const ds=`${currentDate.getFullYear()}-${String(currentDate.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                    const dt=tasks.filter(t=>t.deadline===ds);
+                    const isToday=new Date().toDateString()===new Date(currentDate.getFullYear(),currentDate.getMonth(),day).toDateString();
+                    return (
+                      <div key={day} style={{ minHeight:60, padding:6, borderRadius:10, background:isToday?'#F0F1FF':'transparent', border:`1px solid ${isToday?'#C5CAE9':'#f0f0f0'}` }}>
+                        <div style={{ fontSize:12, fontWeight: isToday?800:500, color: isToday?'#5C6BC0':'#666', marginBottom:4 }}>{day}</div>
+                        {dt.slice(0,2).map(t=>(
+                          <div key={t.id} onClick={()=>{setActiveTaskId(t.id);setView('board');}}
+                            style={{ fontSize:9, padding:'2px 4px', borderRadius:4, background:PASTEL[t.color]?.bg, color:PASTEL[t.color]?.text, marginBottom:2, fontWeight:600, cursor:'pointer', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {t.title}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              <div className="p-10">
-                <div className="grid grid-cols-7 mb-6">{days.map(d => <div key={d} className="text-center text-[10px] font-black uppercase text-slate-300 tracking-widest pb-4">{d}</div>)}</div>
-                <div className="grid grid-cols-7 border-t border-l border-slate-50">{renderCalendar()}</div>
+            </div>
+          )}
+
+          {/* SETTINGS */}
+          {view==='settings' && (
+            <div style={{ maxWidth:460, margin:'0 auto' }}>
+              <div style={{ background:'#fff', borderRadius:24, padding:36, boxShadow:'0 4px 24px rgba(0,0,0,0.06)' }}>
+                <h2 style={{ margin:'0 0 28px', fontSize:20, fontWeight:800, color:'#1a1a2e' }}>Настройки</h2>
+                <div style={{ marginBottom:20 }}>
+                  <label style={{ display:'block', fontSize:11, fontWeight:700, color:'#aaa', marginBottom:8, textTransform:'uppercase', letterSpacing:1 }}>Твоё имя</label>
+                  <input value={userName} onChange={e=>setUserName(e.target.value)}
+                    style={{ width:'100%', padding:'12px 16px', border:'1.5px solid #EBEBEB', borderRadius:12, fontSize:14, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }}/>
+                </div>
+                <div style={{ marginBottom:28 }}>
+                  <label style={{ display:'block', fontSize:11, fontWeight:700, color:'#aaa', marginBottom:8, textTransform:'uppercase', letterSpacing:1 }}>Gemini API Key</label>
+                  <input type="password" value={userApiKey} onChange={e=>setUserApiKey(e.target.value)} placeholder="AIzaSy..."
+                    style={{ width:'100%', padding:'12px 16px', border:'1.5px solid #EBEBEB', borderRadius:12, fontSize:14, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }}/>
+                  <p style={{ margin:'8px 0 0', fontSize:12, color:'#bbb' }}>Ключ хранится только в твоём браузере.</p>
+                </div>
+                <button onClick={()=>saveSettings(userName,userApiKey)}
+                  style={{ width:'100%', padding:'14px', background:'#5C6BC0', color:'#fff', border:'none', borderRadius:14, fontWeight:700, fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                  <Save size={16}/> Сохранить
+                </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-      </main>
+        </main>
+      </div>
 
       {/* Detail Modal */}
       {activeTask && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xl z-50 flex items-center justify-center p-4 animate-in fade-in duration-300" onClick={closeDetail}>
-          <div className="bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 max-h-[85vh]" onClick={e => e.stopPropagation()}>
-            <div className={`p-8 ${getColorClass(activeTask.color)} border-none flex justify-between items-center shrink-0`}>
-              <button onClick={closeDetail} className="flex items-center gap-2 px-5 py-2.5 bg-white/20 hover:bg-white/40 rounded-2xl transition-all text-[10px] font-black uppercase tracking-widest">
-                <ArrowLeft size={14} /> <span>Назад</span>
-              </button>
-              <X size={24} className="cursor-pointer opacity-40 hover:opacity-100" onClick={closeDetail} />
-            </div>
-            <div className="p-10 flex-1 overflow-y-auto custom-scrollbar">
-              <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-2 block">Дедлайн: {activeTask.deadline}</span>
-              <h3 className="text-3xl font-black text-slate-800 mb-8 uppercase italic leading-none tracking-tighter">{activeTask.title}</h3>
-              <div className="mb-10">
-                <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.3em] mb-4">Анализ эксперта:</h4>
-                <p className="text-slate-500 text-sm leading-relaxed bg-slate-50 p-6 rounded-3xl border border-slate-100 italic font-bold">"{activeTask.reasoning}"</p>
+        <div onClick={closeDetail} style={{ position:'fixed', inset:0, background:'rgba(30,30,60,0.35)', backdropFilter:'blur(8px)', zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:'#fff', borderRadius:28, width:'100%', maxWidth:460, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.2)', overflow:'hidden' }}>
+            {/* Modal Header */}
+            <div style={{ background: PASTEL[activeTask.color]?.bg||'#eee', padding:'24px 28px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div>
+                <div style={{ fontSize:11, color: PASTEL[activeTask.color]?.text, fontWeight:700, opacity:.7, marginBottom:4 }}>ДЕДЛАЙН: {activeTask.deadline}</div>
+                <h3 style={{ margin:0, fontSize:18, fontWeight:800, color:'#1a1a2e' }}>{activeTask.title}</h3>
               </div>
-              <div className="space-y-4">
-                <h4 className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.3em] mb-4">План выживания:</h4>
+              <button onClick={closeDetail} style={{ background:'rgba(255,255,255,0.5)', border:'none', borderRadius:50, width:32, height:32, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <X size={16}/>
+              </button>
+            </div>
+            {/* Modal Body */}
+            <div style={{ padding:'24px 28px', overflowY:'auto', flex:1 }}>
+              {activeTask.reasoning && (
+                <div style={{ background:'#F8F8FC', borderRadius:14, padding:'14px 18px', marginBottom:20 }}>
+                  <div style={{ fontSize:10, fontWeight:700, color:'#5C6BC0', marginBottom:6, textTransform:'uppercase', letterSpacing:1 }}>Анализ AI</div>
+                  <p style={{ margin:0, fontSize:13, color:'#666', lineHeight:1.6 }}>{activeTask.reasoning}</p>
+                </div>
+              )}
+              <div style={{ fontSize:10, fontWeight:700, color:'#5C6BC0', marginBottom:12, textTransform:'uppercase', letterSpacing:1 }}>План ({activeTask.steps.filter(s=>s.completed).length}/{activeTask.steps.length})</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 {activeTask.steps.map((step, idx) => (
-                  <div key={idx} onClick={() => toggleStep(activeTask.id, idx)} className={`flex items-center gap-4 p-5 rounded-[1.5rem] border-2 cursor-pointer transition-all ${step.completed ? 'bg-indigo-50 border-indigo-100' : 'bg-white border-slate-50 hover:border-slate-100'}`}>
-                    {step.completed ? <CheckCircle2 size={24} className="text-indigo-600" /> : <Circle size={24} className="text-slate-100" />}
-                    <span className={`text-sm font-black uppercase italic ${step.completed ? 'line-through text-indigo-200' : 'text-slate-700'}`}>{step.text}</span>
+                  <div key={idx} onClick={()=>toggleStep(activeTask.id,idx)}
+                    style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderRadius:12,
+                      background: step.completed?'#F0F1FF':'#F8F8FC', border:'1.5px solid', borderColor: step.completed?'#C5CAE9':'#EBEBEB', cursor:'pointer', transition:'all .15s' }}>
+                    {step.completed ? <CheckCircle2 size={20} color="#5C6BC0"/> : <Circle size={20} color="#ddd"/>}
+                    <span style={{ fontSize:13, fontWeight:600, color: step.completed?'#5C6BC0':'#444', textDecoration: step.completed?'line-through':'none' }}>{step.text}</span>
                   </div>
                 ))}
               </div>
+            </div>
+            {/* Modal Footer */}
+            <div style={{ padding:'16px 28px', borderTop:'1px solid #EBEBEB', display:'flex', justifyContent:'flex-end' }}>
+              <button onClick={()=>deleteTask(activeTask.id)}
+                style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 20px', background:'#FFF0F0', color:'#e74c3c', border:'none', borderRadius:12, fontWeight:700, fontSize:13, cursor:'pointer' }}>
+                <Trash2 size={15}/> Удалить задачу
+              </button>
             </div>
           </div>
         </div>
