@@ -72,7 +72,8 @@ const App = () => {
     if (!inputValue.trim()) return;
     setIsProcessing(true); setError(null);
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
       const prompt = pendingTask
         ? `Сегодня ${today}. Уточнение дедлайна для "${pendingTask.rawInput}": "${inputValue}". Выдай JSON.`
         : `Сегодня ${today}. Разбери задачу: "${inputValue}". Если даты нет, установи isDeadlineMissing: true.`;
