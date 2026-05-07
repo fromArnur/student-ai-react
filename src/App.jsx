@@ -54,6 +54,10 @@ const App = () => {
 
   const activeTask = tasks.find(t => t.id === activeTaskId);
 
+  const closeDetail = () => {
+    setActiveTaskId(null);
+  };
+
   // --- API Logic ---
   const callGemini = async (prompt) => {
     if (!userApiKey) {
@@ -87,7 +91,7 @@ const App = () => {
       }
     };
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${userApiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${userApiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
